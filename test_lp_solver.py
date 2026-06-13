@@ -226,6 +226,141 @@ class TestLPSolver(unittest.TestCase):
         self.assertEqual(result["status"], 0)
         self.assertEqual(result["status_text"], "最优解")
 
+    def test_sensitivity_shadow_prices(self):
+        """测试影子价格：约束右端变化对目标函数的边际影响"""
+        c = [3, 2]
+        A_ub = [[1, 1], [2, 1]]
+        b_ub = [4, 5]
+        result = self.solver.solve(c=c, A_ub=A_ub, b_ub=b_ub, sense="max")
+        self.assertTrue(result["success"])
+        self.assertIsNotNone(result["sensitivity"])
+        self.assertIn("shadow_prices", result["sensitivity"])
+        sp = result["sensitivity"]["shadow_prices"]
+        self.assertIsNotNone(sp["ineq"])
+        self.assertEqual(len(sp["ineq"]), 2)
+        self.assertAlmostEqual(sp["ineq"][0], 1.0, places=5)
+        self.assertAlmostEqual(sp["ineq"][1], 1.0, places=5)
+
+    def test_sensitivity_shadow_price_verification(self):
+        """通过实际扰动验证影子价格的正确性"""
+        c = [3, 2]
+        A_ub = [[1, 1], [2, 1]]
+        b_ub = [4, 5]
+        result = self.solver.solve(c=c, A_ub=A_ub, b_ub=b_ub, sense="max")
+        base_fun = result["fun"]
+        sp = result["sensitivity"]["shadow_prices"]["ineq"]
+
+        b_ub2 = [5, 5]
+        result2 = self.solver.solve(c=c, A_ub=A_ub, b_ub=b_ub2, sense="max")
+        actual_change = result2["fun"] - base_fun
+        predicted_change = sp[0] * 1.0
+        self.assertAlmostEqual(actual_change, predicted_change, places=5)
+
+    def test_sensitivity_slack(self):
+        """测试约束松弛量"""
+        c = [3, 2]
+        A_ub = [[1, 1], [2, 1]]
+        b_ub = [10, 10]
+        result = self.solver.solve(c=c, A_ub=A_ub, b_ub=b_ub, sense="max")
+        self.assertTrue(result["success"])
+        slack = result["sensitivity"]["slack"]["ineq"]
+        self.assertIsNotNone(slack)
+        self.assertEqual(len(slack), 2)
+
+    def test_sensitivity_reduced_costs(self):
+        """测试变量约简成本"""
+        c = [3, 2]
+        A_ub = [[1, 1], [2, 1]]
+        b_ub = [4, 5]
+        result = self.solver.solve(c=c, A_ub=A_ub, b_ub=b_ub, sense="max")
+        self.assertTrue(result["success"])
+        rc = result["sensitivity"]["reduced_costs"]
+        self.assertIn("lower", rc)
+        self.assertIn("upper", rc)
+        self.assertIsNotNone(rc["lower"])
+        self.assertEqual(len(rc["lower"]), 2)
+
+    def test_sensitivity_infeasible_problem(self):
+        """无可行解问题应返回 sensitivity=None"""
+        c = [1, 1]
+        A_ub = [[1, 1], [-1, -1]]
+        b_ub = [1, -3]
+        result = self.solver.solve(c=c, A_ub=A_ub, b_ub=b_ub)
+        self.assertFalse(result["success"])
+        self.assertIsNone(result["sensitivity"])
+
+    def test_sensitivity_with_equality(self):
+        """测试等式约束的影子价格"""
+        c = [3, 1]
+        A_eq = [[1, 1]]
+        b_eq = [6]
+        A_ub = [[-1, 1]]
+        b_ub = [-2]
+        result = self.solver.solve(c=c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq)
+        self.assertTrue(result["success"])
+        sp = result["sensitivity"]["shadow_prices"]
+        self.assertIsNotNone(sp["eq"])
+        self.assertEqual(len(sp["eq"]), 1)
+
+    def test_sensitivity_analysis_method(self):
+        """测试 sensitivity_analysis 方法返回基础灵敏度信息"""
+        c = [3, 2]
+        A_ub = [[1, 1], [2, 1]]
+        b_ub = [4, 5]
+        result = self.solver.sensitivity_analysis(
+            c=c, A_ub=A_ub, b_ub=b_ub, sense="max"
+        )
+        self.assertTrue(result["success"])
+        self.assertIsNotNone(result["sensitivity"])
+        self.assertIn("shadow_prices", result["sensitivity"])
+        self.assertIn("slack", result["sensitivity"])
+        self.assertIn("reduced_costs", result["sensitivity"])
+
+    def test_sensitivity_analysis_with_ranges(self):
+        """测试 sensitivity_analysis 方法计算范围"""
+        c = [3, 2]
+        A_ub = [[1, 1], [2, 1]]
+        b_ub = [4, 5]
+        result = self.solver.sensitivity_analysis(
+            c=c, A_ub=A_ub, b_ub=b_ub, sense="max",
+            compute_ranges=True, range_step=0.1, range_max_iter=50
+        )
+        self.assertTrue(result["success"])
+        self.assertIn("ranges", result["sensitivity"])
+        ranges = result["sensitivity"]["ranges"]
+        self.assertIn("ineq", ranges)
+        self.assertIsNotNone(ranges["ineq"])
+        self.assertEqual(len(ranges["ineq"]), 2)
+        self.assertIn("allowable_decrease", ranges["ineq"][0])
+        self.assertIn("allowable_increase", ranges["ineq"][0])
+        self.assertGreater(ranges["ineq"][0]["allowable_decrease"], 0)
+        self.assertGreater(ranges["ineq"][0]["allowable_increase"], 0)
+
+    def test_sensitivity_analysis_minimization(self):
+        """测试最小化问题的灵敏度分析"""
+        c = [1, 4]
+        A_ub = [[1, 2], [1, 1]]
+        b_ub = [8, 5]
+        result = self.solver.sensitivity_analysis(
+            c=c, A_ub=A_ub, b_ub=b_ub, sense="min"
+        )
+        self.assertTrue(result["success"])
+        sp = result["sensitivity"]["shadow_prices"]["ineq"]
+        self.assertIsNotNone(sp)
+
+    def test_convenience_sensitivity_analysis_lp(self):
+        """测试便捷函数 sensitivity_analysis_lp"""
+        from lp_solver import sensitivity_analysis_lp
+        c = [3, 2]
+        A_ub = [[1, 1], [2, 1]]
+        b_ub = [4, 5]
+        result = sensitivity_analysis_lp(
+            c=c, A_ub=A_ub, b_ub=b_ub, sense="max"
+        )
+        self.assertTrue(result["success"])
+        self.assertIsNotNone(result["sensitivity"])
+        self.assertAlmostEqual(result["fun"], 9.0, places=5)
+
 
 if __name__ == "__main__":
     unittest.main()
