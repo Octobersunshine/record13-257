@@ -2,6 +2,21 @@ import numpy as np
 from scipy.optimize import linprog
 
 
+_STATUS_TEXT_MAP = {
+    0: "最优解",
+    1: "迭代次数超限",
+    2: "无可行解",
+    3: "无界",
+    4: "数值错误",
+}
+
+
+def _get_status_text(status_code, message):
+    if status_code in _STATUS_TEXT_MAP:
+        return _STATUS_TEXT_MAP[status_code]
+    return f"未知状态 (status={status_code})"
+
+
 class LPSolver:
     """
     线性规划求解服务
@@ -98,12 +113,13 @@ class LPSolver:
 
         返回:
             dict: {
-                'success': bool,   是否找到可行且最优的解
-                'x':       ndarray, 最优解 (仅当 success=True 时有效)
-                'fun':     float,   最优值 (原始目标函数值，sense 已处理)
-                'message': str,     求解结果说明
-                'status':  int,     scipy linprog 状态码
-                'nit':     int,     迭代次数
+                'success':      bool,   是否找到可行且最优的解
+                'x':            ndarray, 最优解 (仅当 success=True 时有效)
+                'fun':          float,   最优值 (原始目标函数值，sense 已处理)
+                'status':       int,     scipy linprog 状态码
+                'status_text':  str,     中文状态描述: 最优解/无可行解/无界/迭代次数超限/数值错误
+                'message':      str,     求解器原始说明信息
+                'nit':          int,     迭代次数
             }
         """
         if sense not in ("min", "max"):
@@ -135,6 +151,9 @@ class LPSolver:
             method=self.method,
         )
 
+        status_code = int(result.status)
+        status_text = _get_status_text(status_code, result.message)
+
         if result.fun is not None:
             fun_value = float(result.fun) if sense == "min" else float(-result.fun)
         else:
@@ -144,8 +163,9 @@ class LPSolver:
             "success": bool(result.success),
             "x": result.x.copy() if result.x is not None else None,
             "fun": fun_value,
+            "status": status_code,
+            "status_text": status_text,
             "message": result.message,
-            "status": int(result.status),
             "nit": int(result.nit) if getattr(result, "nit", None) is not None else 0,
         }
 

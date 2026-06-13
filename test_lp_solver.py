@@ -119,6 +119,10 @@ class TestLPSolver(unittest.TestCase):
         b_ub = [1, -3]
         result = self.solver.solve(c=c, A_ub=A_ub, b_ub=b_ub)
         self.assertFalse(result["success"])
+        self.assertEqual(result["status"], 2)
+        self.assertEqual(result["status_text"], "无可行解")
+        self.assertIsNone(result["x"])
+        self.assertIsNone(result["fun"])
 
     def test_unbounded_problem(self):
         """
@@ -134,6 +138,10 @@ class TestLPSolver(unittest.TestCase):
         b_ub = [0]
         result = self.solver.solve(c=c, A_ub=A_ub, b_ub=b_ub, sense="max")
         self.assertFalse(result["success"])
+        self.assertEqual(result["status"], 3)
+        self.assertEqual(result["status_text"], "无界")
+        self.assertIsNone(result["x"])
+        self.assertIsNone(result["fun"])
 
     def test_invalid_method(self):
         with self.assertRaises(ValueError):
@@ -197,13 +205,26 @@ class TestLPSolver(unittest.TestCase):
         self.assertIn("success", result)
         self.assertIn("x", result)
         self.assertIn("fun", result)
-        self.assertIn("message", result)
         self.assertIn("status", result)
+        self.assertIn("status_text", result)
+        self.assertIn("message", result)
         self.assertIn("nit", result)
         self.assertIsInstance(result["success"], bool)
         self.assertIsInstance(result["fun"], float)
         self.assertIsInstance(result["status"], int)
+        self.assertIsInstance(result["status_text"], str)
+        self.assertIsInstance(result["message"], str)
         self.assertIsInstance(result["nit"], int)
+
+    def test_optimal_status_text(self):
+        """测试成功求解时返回 status_text 为'最优解'"""
+        c = [3, 2]
+        A_ub = [[1, 1], [2, 1]]
+        b_ub = [4, 5]
+        result = self.solver.solve(c=c, A_ub=A_ub, b_ub=b_ub, sense="max")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], 0)
+        self.assertEqual(result["status_text"], "最优解")
 
 
 if __name__ == "__main__":
